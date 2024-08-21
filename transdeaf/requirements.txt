@@ -1,0 +1,7 @@
+Flask
+opencv-python
+mediapipe
+numpy
+tensorflow
+pybase64
+pillow

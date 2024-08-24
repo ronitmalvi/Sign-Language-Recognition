@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Real-Time Inference</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+</head>
+<body>
+    <div class="relative w-full h-screen">
+        <a href="{{ url_for('index') }}" class="flex items-center gap-2 bg-gray-300 p-2 rounded-full w-36 absolute top-5 left-5 hover:bg-gray-400 transition-all">
+            <img class="h-10 rounded-full" src="flask_server\img.jpg" alt="">
+            <h1 class="text-[18px]">TransDeaf</h1>
+        </a>
+        <div class="absolute w-screen flex flex-row justify-center inset-x-0 top-24 h-2/3">
+            <div class="w-2/3 bg-zinc-100 rounded-xl flex flex-col justify-center items-center">
+                    <h1 class="text-2xl">Real Time Inference</h1>
+                    <div class="w-full h-3/4 flex items-center justify-center flex-col">
+                        <video id="video" width="420" height="320" class="rounded-md border-2 " autoplay></video>
+                        <div id="prediction" class="mt-1 bg-blue-100 rounded-lg"></div>
+
+                    </div>
+                    <script>
+                        async function setupCamera() {
+                            const video = document.getElementById('video');
+                            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                            video.srcObject = stream;
+                            return new Promise((resolve) => {
+                                video.onloadedmetadata = () => {
+                                    resolve(video);
+                                };
+                            });
+                        }
+        
+                        async function captureFrames(label, num_samples) {
+                            const video = document.getElementById('video');
+                            const canvas = document.createElement('canvas');
+                            canvas.width = video.videoWidth;
+                            canvas.height = video.videoHeight;
+                            const context = canvas.getContext('2d');
+        
+                            for (let i = 0; i < num_samples; i++) {
+                                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                                const frame = canvas.toDataURL('image/jpeg');
+        
+                                await fetch('/collect_frame', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({ image: frame.split(',')[1], label: label, count: i }),
+                                });
+        
+                                document.getElementById('status').innerText = `Captured ${i + 1} of ${num_samples}`;
+                            }
+        
+                            document.getElementById('status').innerText = 'Data collection completed.';
+                        }
+        
+                        document.getElementById('dataCollectionForm').onsubmit = function (e) {
+                            e.preventDefault();
+                            const label = document.getElementById('label').value;
+                            const num_samples = document.getElementById('num_samples').value;
+        
+                            setupCamera().then(() => {
+                                captureFrames(label, num_samples);
+                            });
+                        }
+                    </script>
+            </div>
+        </div>
+        
+        <div class="flex ml-10 justify-center mr-10 gap-4 translate-y-2 absolute inset-x-0 bottom-10">
+            <a href="{{ url_for('collect_data_page') }}" class="flex flex-col items-center bg-blue-100 p-2 rounded-lg w-40 hover:bg-blue-200 transition-all">Collect Data<span class="mt-3 text-xs text-wrap text-center">Collect data the model to be trained on!</span></a>
+            <a href="{{ url_for('api_load_data') }}" class="flex flex-col items-center bg-blue-100 p-2 rounded-lg w-40 hover:bg-blue-200 transition-all">Load Data<span class="mt-3 text-xs text-wrap text-center">Collected Data being Loaded</span></a>
+            <a href="{{ url_for('train_model_page') }}" class="flex flex-col items-center bg-blue-100 p-2 rounded-lg w-40 hover:bg-blue-200 transition-all">Train Model<span class="mt-3 text-xs text-wrap text-center">Training the Model on the collected Data</span></a>
+            <a href="{{ url_for('inference_page') }}" class="flex flex-col items-center bg-blue-200 p-2 rounded-lg text-center w-40 hover:bg-blue-200 transition-all">Real-time Inference<span class="mt-3 text-xs text-wrap text-center">Real-time inference of the Hand Gestures</span></a>
+        </div>
+    </div>
+    <script>
+        async function setupCamera() {
+            const video = document.getElementById('video');
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    resolve(video);
+                };
+            });
+        }
+
+        function speakPrediction(prediction) {
+            const synth = window.speechSynthesis;
+            const utterance = new SpeechSynthesisUtterance(`Prediction: ${prediction}`);
+            synth.speak(utterance);
+        }
+
+        async function processFrame(video, canvas, context) {
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const frame = canvas.toDataURL('image/jpeg');
+            try {
+                const response = await fetch('/process_frame', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ image: frame.split(',')[1] }),
+                });
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                const result = await response.json();
+                const predictionElement = document.getElementById('prediction');
+                const currentPrediction = `Prediction: ${result.label}`;
+                if (predictionElement.innerText !== currentPrediction) {
+                    predictionElement.innerText = currentPrediction;
+                    speakPrediction(result.label);
+                }
+            } catch (error) {
+                console.error('Error processing frame:', error);
+            }
+            requestAnimationFrame(() => processFrame(video, canvas, context));
+        }
+
+        async function startInference() {
+            const video = await setupCamera();
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            processFrame(video, canvas, context);
+        }
+
+        startInference();
+    </script>
+</body>
+</html>

@@ -10,8 +10,16 @@ from tensorflow.keras.utils import to_categorical # type: ignore
 import base64
 import io
 from PIL import Image
+from supabase import create_client,Client
 
+# password supabase : yFGegTX8Xich6eaU
 app = Flask(__name__)
+
+SUPABASE_URL="https://zscgdfhlvwsxexvpxazy.supabase.co"
+SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzY2dkZmhsdndzeGV4dnB4YXp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjQ2OTgyNTIsImV4cCI6MjA0MDI3NDI1Mn0.3GbE2CDwLxI6g36sHzIZhN_-CDrkR6JroTfdg2taSBM"
+
+supabase : Client=create_client(SUPABASE_URL,SUPABASE_KEY)
+
 
 # Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
@@ -34,20 +42,55 @@ def collect_data_page():
 
 @app.route('/collect_frame', methods=['POST'])
 def collect_frame():
-    data = request.get_json()
-    label = data['label']
-    count = data['count']
-    image_data = base64.b64decode(data['image'])
-    image = Image.open(io.BytesIO(image_data))
-    frame = np.array(image)
+    try:
+        # Retrieve JSON data
+        data = request.get_json()
+        label = data.get('label')
+        count = data.get('count')
+        image_data = data.get('image')
 
-    save_path = 'data'
-    label_path = os.path.join(save_path, label)
-    os.makedirs(label_path, exist_ok=True)
+        # Validate the data
+        if not all([label, count, image_data]):
+            return jsonify({"error": "Missing data"}), 400
 
-    frame_path = os.path.join(label_path, f'{label}_{count}.jpg')
-    cv2.imwrite(frame_path, frame)
-    return jsonify({"status": "Frame saved"})
+        # Decode the image
+        image_data = base64.b64decode(image_data)
+        image = Image.open(io.BytesIO(image_data))
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG")
+        buffer.seek(0)
+
+        # Define storage path
+        file_path = f"{label}/{label}_{count}.jpg"
+        
+        # Upload the image to Supabase Storage
+        bucket_name = "dataImage"  # Replace with your Supabase bucket name
+        response = supabase.storage().from_(bucket_name).upload(file_path, buffer.read())
+
+        # Check if upload was successful
+        if response.status_code != 200:
+            return jsonify({"error": "Failed to upload image"}), 500
+
+        return jsonify({"status": "Frame saved", "file_path": file_path})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+# def collect_frame():
+#     data = request.get_json()
+#     label = data['label']
+#     count = data['count']
+#     image_data = base64.b64decode(data['image'])
+#     image = Image.open(io.BytesIO(image_data))
+#     frame = np.array(image)
+
+#     save_path = 'data'
+#     label_path = os.path.join(save_path, label)
+#     os.makedirs(label_path, exist_ok=True)
+
+#     frame_path = os.path.join(label_path, f'{label}_{count}.jpg')
+#     cv2.imwrite(frame_path, frame)
+#     return jsonify({"status": "Frame saved"})
+
 
 @app.route('/load_data', methods=['GET'])
 def api_load_data():
@@ -108,19 +151,59 @@ def preprocess_frame(frame):
             return landmarks
     return None
 
-def load_data(data_path='data'):
+def load_data(bucket_name='dataImage'):
     X, y = [], []
-    labels = os.listdir(data_path)
+    
+    # Retrieve the list of files from the Supabase bucket
+    response = supabase.storage().from_(bucket_name).list('')
+    if response.status_code != 200:
+        raise ValueError("Failed to list files from Supabase")
+    
+    files = response.json()
+    
+    # Create a label-to-index mapping
+    labels = sorted(set(file.split('/')[0] for file in files))
+    label_to_index = {label: idx for idx, label in enumerate(labels)}
+
     for label in labels:
-        label_path = os.path.join(data_path, label)
-        for img_file in os.listdir(label_path):
-            img_path = os.path.join(label_path, img_file)
-            frame = cv2.imread(img_path)
+        # Filter files by label
+        label_files = [file for file in files if file.startswith(label + '/')]
+        
+        for file_path in label_files:
+            # Download the image file from Supabase
+            response = supabase.storage().from_(bucket_name).download(file_path)
+            if response.status_code != 200:
+                continue  # Skip if the file cannot be downloaded
+            
+            image_data = response.content
+            image = Image.open(io.BytesIO(image_data))
+            frame = np.array(image)
+            
+            # Preprocess and append the image
             landmarks = preprocess_frame(frame)
-            if landmarks:
+            if landmarks is not None:
                 X.append(landmarks)
-                y.append(labels.index(label))
-    return np.array(X), np.array(y), labels
+                y.append(label_to_index[label])
+    
+    # Convert lists to numpy arrays
+    X = np.array(X)
+    y = np.array(y)
+    
+    return X, y, labels
+# def load_data(data_path='data'):
+#     X, y = [], []
+#     labels = os.listdir(data_path)
+#     for label in labels:
+#         label_path = os.path.join(data_path, label)
+#         for img_file in os.listdir(label_path):
+#             img_path = os.path.join(label_path, img_file)
+#             frame = cv2.imread(img_path)
+#             landmarks = preprocess_frame(frame)
+#             if landmarks:
+#                 X.append(landmarks)
+#                 y.append(labels.index(label))
+#     return np.array(X), np.array(y), labels
+
 
 def train_model(X_train, y_train, num_classes):
     model = Sequential([

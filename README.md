@@ -28,8 +28,8 @@ signrecog/
 
 1. Clone the repository:
     ```sh
-    git clone https://github.com/yourusername/transdeaf.git
-    cd transdeaf
+    git clone https://github.com/ronitmalvi/Sign-Language-Recognition.git
+    cd signrecog
     ```
 
 2. Install the required dependencies:
@@ -48,8 +48,8 @@ signrecog/
 
 ## Project Files
 
-- [app.py](http://_vscodecontentref_/10): Main Flask application file.
-- [index.py](http://_vscodecontentref_/11): Additional application logic.
+- `app.py`: Main Flask application file.
+- `index.py`: Additional application logic.
 - `requirements.txt`: List of dependencies.
 - `wsgi.py`: WSGI entry point for deployment.
 - `templates/`: HTML templates for the web application.

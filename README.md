@@ -3,6 +3,7 @@
 This is an innovative application that converts hand gestures into seamless text and speech, bridging the gap between the deaf community and the world.
 
 ## Project Structure
+```
 signrecog/
 ├── __pycache__/
 ├── data/
@@ -21,8 +22,7 @@ signrecog/
 ├── wsgi.py
 ├── X_train.npy
 └── y_train.npy
-
-
+```
 
 ## Installation
 

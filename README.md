@@ -44,8 +44,6 @@ signrecog/
     python app.py
     ```
 
-2. Open your web browser and navigate to `http://127.0.0.1:5000/`.
-
 ## Project Files
 
 - `app.py`: Main Flask application file.
